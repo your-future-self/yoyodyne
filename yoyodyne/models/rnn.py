@@ -46,9 +46,7 @@ class RNNModel(base.BaseModel):
     ):
         super().__init__(*args, **kwargs)
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(
-            self.decoder_hidden_size, self.target_vocab_size
-        )
+        self.classifier = nn.Linear(self.decoder_hidden_size, self.target_vocab_size)
         self.decoder = self.get_decoder()
         self._log_model()
         self.save_hyperparameters(
@@ -58,6 +56,8 @@ class RNNModel(base.BaseModel):
                 "embeddings",
                 "features_encoder",
                 "source_encoder",
+                # Allows to change between teacher forcing and student forcing from a checkpoint
+                "teacher_forcing",
             ]
         )
 
@@ -87,9 +87,7 @@ class RNNModel(base.BaseModel):
         # TODO: modify to work with batches larger than 1.
         batch_size = context.size(0)
         if batch_size != 1:
-            raise NotImplementedError(
-                "Beam search is not supported for batch_size > 1"
-            )
+            raise NotImplementedError("Beam search is not supported for batch_size > 1")
         state = self.decoder.initial_state(batch_size)
         # The start symbol is not needed here because the beam puts that in
         # automatically.
@@ -100,12 +98,8 @@ class RNNModel(base.BaseModel):
                     beam.push(cell)
                 else:
                     symbol = torch.tensor([[cell.symbol]], device=self.device)
-                    logits, state = self.decode_step(
-                        symbol, context, mask, state
-                    )
-                    scores = nn.functional.log_softmax(
-                        logits.squeeze(1), dim=0
-                    )
+                    logits, state = self.decode_step(symbol, context, mask, state)
+                    scores = nn.functional.log_softmax(logits.squeeze(1), dim=0)
                     for new_cell in cell.extensions(state, scores):
                         beam.push(new_cell)
             beam.update()
@@ -131,9 +125,7 @@ class RNNModel(base.BaseModel):
         Returns:
             Tuple[torch.Tensor, modules.RNNState]: logits and the RNN state.
         """
-        decoded, state = self.decoder(
-            symbol, self.embeddings, context, mask, state
-        )
+        decoded, state = self.decoder(symbol, self.embeddings, context, mask, state)
         logits = self.classifier(decoded)
         return logits, state
 
@@ -172,22 +164,16 @@ class RNNModel(base.BaseModel):
         if self.has_features_encoder:
             if not batch.has_features:
                 raise base.ConfigurationError(
-                    "Features encoder specified but "
-                    "no feature column specified"
+                    "Features encoder specified but " "no feature column specified"
                 )
-            if (
-                self.source_encoder.output_size
-                != self.features_encoder.output_size
-            ):
+            if self.source_encoder.output_size != self.features_encoder.output_size:
                 raise base.ConfigurationError(
                     "Cannot concatenate source encoding "
                     f"({self.source_encoder.output_size}) and features "
                     f"encoding ({self.features_encoder.output_size})"
                 )
             sequence = torch.cat((sequence, batch.features.tensor), dim=1)
-            features_encoded = self.features_encoder(
-                batch.features, self.embeddings
-            )
+            features_encoded = self.features_encoder(batch.features, self.embeddings)
             encoded = torch.cat((encoded, features_encoded), dim=1)
             mask = torch.cat((mask, batch.features.mask), dim=1)
         elif batch.has_features:
