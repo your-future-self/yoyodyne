@@ -193,7 +193,7 @@ class RNNModel(base.BaseModel):
                 return self.greedy_decode_train_validate(
                     context,
                     mask,
-                    batch.target.tensor if self.teacher_forcing else None,
+                    batch.target.tensor if self.student_forcing != 0 else None,
                 )
             else:
                 return self.greedy_decode_predict_test(context, mask)
@@ -229,6 +229,7 @@ class RNNModel(base.BaseModel):
         symbol = self.start_symbol(batch_size)
         state = self.decoder.initial_state(batch_size)
         predictions = []
+        print(target)
         if self.student_forcing != 0:
             target_length = self.max_target_length
             # should I be deciding target length based on student forcing float?
