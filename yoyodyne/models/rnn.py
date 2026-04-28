@@ -8,7 +8,7 @@ concrete decoder modules.
 import abc
 
 import torch
-from torch import nn
+from torch import distributions, nn
 
 from .. import data, defaults, special
 from . import base, beam_search, embeddings, modules
@@ -29,26 +29,29 @@ class RNNModel(base.BaseModel):
 
     Args:
         *args: passed to superclass.
-        teacher_forcing (bool, optional): should teacher (rather than student)
+        student_forcing (float, optional): probability of each token being student forced
             forcing be used?
         **kwargs: passed to superclass.
     """
 
-    teacher_forcing: bool
+    # teacher_forcing: bool
+    student_forcing: float
     classifier: nn.Linear
 
     def __init__(
         self,
         *args,
-        teacher_forcing: bool = defaults.TEACHER_FORCING,
+        # teacher_forcing: bool = defaults.TEACHER_FORCING,
+        student_forcing: float = defaults.STUDENT_FORCING,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+
+        self.student_forcing = distributions.Bernoulli(student_forcing)
+        self.classifier = nn.Linear(self.decoder_hidden_size, self.target_vocab_size)
         self.decoder = self.get_decoder()
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(
-            self.decoder_hidden_size, self.target_vocab_size
-        )
+        self.classifier = nn.Linear(self.decoder_hidden_size, self.target_vocab_size)
         self._log_model()
         self.save_hyperparameters(
             ignore=[
@@ -60,6 +63,8 @@ class RNNModel(base.BaseModel):
                 "source_encoder",
                 # Options that can change between training and prediction.
                 "beam_width",
+                # Allows to change between teacher forcing and student forcing from a checkpoint
+                # "teacher_forcing",
             ]
         )
 
@@ -83,9 +88,7 @@ class RNNModel(base.BaseModel):
                 log-likelihoods.
         """
         batch_size = context.size(0)
-        per_item_states = self.decoder.initial_state(batch_size).split(
-            batch_size
-        )
+        per_item_states = self.decoder.initial_state(batch_size).split(batch_size)
         batched_beam = beam_search.BatchedBeam(
             self.beam_width, batch_size, per_item_states
         )
@@ -151,9 +154,7 @@ class RNNModel(base.BaseModel):
             tuple[torch.Tensor, modules.RNNState]: logits and the updated RNN
                 state.
         """
-        decoded, state = self.decoder(
-            symbol, self.embeddings, context, mask, state
-        )
+        decoded, state = self.decoder(symbol, self.embeddings, context, mask, state)
         logits = self.classifier(decoded)
         return logits, state
 
@@ -190,22 +191,16 @@ class RNNModel(base.BaseModel):
         if self.has_features_encoder:
             if not batch.has_features:
                 raise base.ConfigurationError(
-                    "Features encoder specified but "
-                    "no feature column specified"
+                    "Features encoder specified but " "no feature column specified"
                 )
-            if (
-                self.source_encoder.output_size
-                != self.features_encoder.output_size
-            ):
+            if self.source_encoder.output_size != self.features_encoder.output_size:
                 raise base.ConfigurationError(
                     "Cannot concatenate source encoding "
                     f"({self.source_encoder.output_size}) and features "
                     f"encoding ({self.features_encoder.output_size})"
                 )
             sequence = torch.cat((sequence, batch.features.tensor), dim=1)
-            features_encoded = self.features_encoder(
-                batch.features, self.embeddings
-            )
+            features_encoded = self.features_encoder(batch.features, self.embeddings)
             encoded = torch.cat((encoded, features_encoded), dim=1)
             mask = torch.cat((mask, batch.features.mask), dim=1)
         elif batch.has_features:
@@ -257,23 +252,23 @@ class RNNModel(base.BaseModel):
         symbol = self.start_symbol(batch_size)
         state = self.decoder.initial_state(batch_size)
         predictions = []
-        if target is None:
+        if self.student_forcing != 0:
             target_length = self.max_target_length
-            final = torch.zeros(batch_size, device=self.device, dtype=bool)
+            # should I be deciding target length based on student forcing float?
         else:
             target_length = target.size(1)
+        final = torch.zeros(batch_size, device=self.device, dtype=bool)
         for t in range(target_length):
+            # implenting nikolaj constant at bengio et al token level
             logits, state = self.decode_step(symbol, context, mask, state)
             predictions.append(logits.squeeze(1))
-            if target is None:
-                # Student forcing.
-                symbol = logits.argmax(dim=2)
-                final = torch.logical_or(final, symbol == special.END_IDX)
-                if final.all():
-                    break
-            else:
-                # Teacher forcing.
-                symbol = target[:, t].unsqueeze(1)
+            sample = self.student_forcing.sample((batch_size,)).bool()
+            student_symbol = logits.argmax(dim=2)
+            teacher_symbol = target[:, t].unsqueeze(1)
+            symbol = torch.where(sample, student_symbol, teacher_symbol)
+            final = torch.logical_or(final, symbol == special.END_IDX)
+            if final.all():
+                break
         predictions = torch.stack(predictions, dim=2)
         return predictions
 
