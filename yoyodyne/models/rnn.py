@@ -48,8 +48,8 @@ class RNNModel(base.BaseModel):
     ):
         super().__init__(*args, **kwargs)
         # self.teacher_forcing = teacher_forcing
-        # self.student_forcing = student_forcing
-        self.student_forcing = distributions.Bernoulli(student_forcing)
+        self.student_forcing = student_forcing
+        # self.student_forcing = distributions.Bernoulli(student_forcing)
         self.classifier = nn.Linear(self.decoder_hidden_size, self.target_vocab_size)
         self.decoder = self.get_decoder()
         self._log_model()
@@ -229,8 +229,7 @@ class RNNModel(base.BaseModel):
         symbol = self.start_symbol(batch_size)
         state = self.decoder.initial_state(batch_size)
         predictions = []
-        print(target)
-        if self.student_forcing != 0:
+        if self.student_forcing == 1.0:
             target_length = self.max_target_length
             # should I be deciding target length based on student forcing float?
         else:
@@ -240,7 +239,12 @@ class RNNModel(base.BaseModel):
             # implenting nikolaj constant at bengio et al token level
             logits, state = self.decode_step(symbol, context, mask, state)
             predictions.append(logits.squeeze(1))
-            sample = self.student_forcing.sample((batch_size,)).bool()
+            # generates coinflip tensor for student forcing
+            forcing_tensor = torch.full(
+                (batch_size, 1), self.student_forcing, device=self.device
+            )
+            sample = torch.bernoulli(forcing_tensor).bool()
+            # maybe do this when first declared
             student_symbol = logits.argmax(dim=2)
             teacher_symbol = target[:, t].unsqueeze(1)
             symbol = torch.where(sample, student_symbol, teacher_symbol)
