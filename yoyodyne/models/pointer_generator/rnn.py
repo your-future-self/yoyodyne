@@ -29,7 +29,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
 
     Args:
         *args: passed to superclass.
-        teacher_forcing (bool, optional).
+        teacher_forcing (float, optional).
         **kwargs: passed to superclass.
 
     Raises:
@@ -39,12 +39,12 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
 
     classifier: nn.Linear
     generation_probability: modules.GenerationProbability
-    teacher_forcing: bool
+    teacher_forcing: float
 
     def __init__(
         self,
         *args,
-        teacher_forcing: bool = defaults.TEACHER_FORCING,
+        teacher_forcing: float = defaults.TEACHER_FORCING,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -111,9 +111,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                     log-likelihoods.
         """
         batch_size = source_mask.size(0)
-        per_item_states = self.decoder.initial_state(batch_size).split(
-            batch_size
-        )
+        per_item_states = self.decoder.initial_state(batch_size).split(batch_size)
         batched_beam = beam_search.BatchedBeam(
             self.beam_width, batch_size, per_item_states
         )
@@ -161,9 +159,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
         expanded_source_encoded = source_encoded[item_indices]
         expanded_source_mask = source_mask[item_indices]
         expanded_features_encoded = (
-            features_encoded[item_indices]
-            if features_encoded is not None
-            else None
+            features_encoded[item_indices] if features_encoded is not None else None
         )
         expanded_features_mask = (
             features_mask[item_indices] if features_mask is not None else None
@@ -225,9 +221,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                 features_mask,
             )
             context = torch.cat((context, features_context), dim=2)
-        _, state = self.decoder.module(
-            torch.cat((embedded, context), dim=2), state
-        )
+        _, state = self.decoder.module(torch.cat((embedded, context), dim=2), state)
         hidden = state.hidden[-1, :, :].unsqueeze(1)
         output_dist = nn.functional.softmax(
             self.classifier(torch.cat((hidden, context), dim=2)),
@@ -294,8 +288,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
         if self.has_features_encoder:
             if not batch.has_features:
                 raise models_base.ConfigurationError(
-                    "Features encoder specified but "
-                    "no feature column specified"
+                    "Features encoder specified but " "no feature column specified"
                 )
             features_encoded = self.features_encoder(
                 batch.features,
@@ -311,14 +304,13 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                     features_mask=batch.features.mask,
                 )
             elif self.training or self.validating:
+                # raise NotImplementedError
                 # This version supports teacher forcing.
                 return self.greedy_decode_train_validate(
                     batch.source.tensor,
                     source_encoded,
                     batch.source.mask,
-                    target=(
-                        batch.target.tensor if self.teacher_forcing else None
-                    ),
+                    target=(batch.target.tensor if self.teacher_forcing else None),
                     features_encoded=features_encoded,
                     features_mask=batch.features.mask,
                 )
@@ -340,6 +332,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
             )
         elif self.training or self.validating:
             # This version supports teacher forcing.
+            # raise NotImplementedError
             return self.greedy_decode_train_validate(
                 batch.source.tensor,
                 source_encoded,
@@ -388,34 +381,35 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
         batch_size = source_mask.size(0)
         symbol = self.start_symbol(batch_size)
         state = self.decoder.initial_state(batch_size)
-        predictions = []
-        if target is None:
+        outputs = []
+        if self.teacher_forcing == 0.0:
             target_length = self.max_target_length
-            final = torch.zeros(batch_size, device=self.device, dtype=bool)
         else:
             target_length = target.size(1)
+        final = torch.zeros(batch_size, device=self.device, dtype=bool)
         for t in range(target_length):
-            log_probs, state = self.decode_step(
-                source,
-                source_encoded,
-                source_mask,
-                symbol,
-                state,
-                features_encoded=features_encoded,
-                features_mask=features_mask,
+            logits, state = self.decode_step(
+                source, source_encoded, source_mask, symbol, state
             )
-            predictions.append(log_probs.squeeze(1))
-            if target is None:
-                # Student forcing.
-                symbol = log_probs.argmax(dim=2)
-                final = torch.logical_or(final, symbol == special.END_IDX)
-                if final.all():
-                    break
-            else:
-                # Teacher forcing.
+            outputs.append(logits.squeeze(1))
+            if self.teacher_forcing == 1.0:
                 symbol = target[:, t].unsqueeze(1)
-        predictions = torch.stack(predictions, dim=2)
-        return predictions
+            elif self.teacher_forcing == 0.0:
+                symbol = logits.argmax(dim=2)
+            else:
+                # RNN decoder expects trailing dimension of 1
+                forcing_tensor = torch.full(
+                    (batch_size, 1), self.teacher_forcing, device=self.device
+                )
+                sample = torch.bernoulli(forcing_tensor).bool()
+                student_symbol = logits.argmax(dim=2)
+                teacher_symbol = target[:, t].unsqueeze(1)
+                symbol = torch.where(sample, student_symbol, teacher_symbol)
+            final = torch.logical_or(final, symbol == special.END_IDX)
+            if final.all():
+                break
+        outputs = torch.stack(outputs, dim=2)
+        return outputs
 
     def greedy_decode_predict_test(
         self,
@@ -470,10 +464,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
     def decoder_input_size(self) -> int:
         # We concatenate along the encoding dimension.
         if self.has_features_encoder:
-            return (
-                self.source_encoder.output_size
-                + self.features_encoder.output_size
-            )
+            return self.source_encoder.output_size + self.features_encoder.output_size
         else:
             return self.source_encoder.output_size
 

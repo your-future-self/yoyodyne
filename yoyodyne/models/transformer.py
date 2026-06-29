@@ -179,26 +179,21 @@ class TransformerModel(base.BaseModel):
             )
             encoded = torch.cat((encoded, features_encoded), dim=1)
             mask = torch.cat((mask, batch.features.mask), dim=1)
-        if self.teacher_forcing != 0 and (self.training or self.validating):
-            batch_size = len(batch)
-            symbol = self.start_symbol(batch_size)
-            target = torch.cat((symbol, batch.target.tensor), dim=1)
-            target_mask = torch.cat(
-                (
-                    torch.zeros_like(symbol, dtype=bool),
-                    batch.target.mask,
-                ),
-                dim=1,
-            )
-            decoded, _ = self.decoder(
-                encoded, mask, target, target_mask, self.embeddings
-            )
-            logits = self.classifier(decoded).transpose(1, 2)
-            return logits[:, :, :-1]  # Ignores END.
-        elif self.beam_width > 1:
+        if self.beam_width > 1:
             return self.beam_decode(encoded, mask)
+        elif self.training or self.validating:
+            if self.teacher_forcing == 1.0:
+                return self.global_decode(
+                    encoded, mask, batch.target.tensor, batch.target.mask
+                )
+            else:
+                return self.greedy_decode_train_validate(
+                    encoded,
+                    mask,
+                    batch.target.tensor if self.teacher_forcing > 0.0 else None,
+                )
         else:
-            return self.greedy_decode(encoded, mask)
+            return self.greedy_decode_predict_test(encoded, mask)
 
     def get_decoder(
         self,
@@ -215,24 +210,112 @@ class TransformerModel(base.BaseModel):
             positional_encoding=positional_encoding,
         )
 
-    def greedy_decode(
+    def global_decode(
+        self,
+        encoded: torch.Tensor,
+        encoded_mask: torch.Tensor,
+        target: torch.Tensor,
+        target_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Decodes globally using teacher forcing.
+
+        This is only possible during strict teacher forcing training and validation;
+        Student forcing requires greedy decoding.
+
+        Args:
+        TODO: specify
+
+        Returns:
+        TODO: specify
+
+        """
+        batch_size = encoded.size(0)
+        symbol = self.start_symbol(batch_size)
+        target = torch.cat((symbol, target), dim=1)
+        target_mask = torch.cat(
+            (
+                torch.zeros_like(symbol, dtype=bool),
+                target_mask,
+            ),
+            dim=1,
+        )
+        decoded, _ = self.decoder(
+            encoded, encoded_mask, target, target_mask, self.embeddings
+        )
+        logits = self.classifier(decoded).transpose(1, 2)
+        return logits[:, :, :-1]  # Ignores END.
+
+    def greedy_decode_train_validate(
         self,
         encoded: torch.Tensor,
         mask: torch.Tensor,
         target: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Decodes the output sequence greedily.
+        """Decodes greedily during training and validation.
 
-        This performs student forcing.
+        Provide the target for teacher forcing.
+
+        Args:
+            encoded (torch.Tensor).
+            mask (torch.Tensor).
+            target (torch.Tensor, optional): target symbols; if provided,
+                these are used for teacher forcing.
+
+        Returns:
+            torch.Tensor: logits from the decoder.
+        """
+        batch_size = encoded.size(0)
+        outputs = []
+        predictions = [self.start_symbol(batch_size).squeeze(1)]
+        if self.teacher_forcing == 0.0:
+            target_length = self.max_target_length
+        else:
+            target_length = target.size(1)
+        final = torch.zeros(batch_size, device=self.device, dtype=bool)
+        for t in range(target_length):
+            logits = self.decode_step(
+                encoded,
+                mask,
+                torch.stack(predictions, dim=1),
+            )
+            outputs.append(logits)  # squeeze?
+            if self.teacher_forcing == 0.0:
+                symbol = torch.argmax(logits, dim=1)
+            else:
+                forcing_tensor = torch.full(
+                    (batch_size,), self.teacher_forcing, device=self.device
+                )
+                sample = torch.bernoulli(forcing_tensor).bool()
+                student_symbol = logits.argmax(dim=1)
+                teacher_symbol = target[:, t]
+                symbol = torch.where(sample, student_symbol, teacher_symbol)
+            predictions.append(symbol)
+            final = torch.logical_or(final, symbol == special.END_IDX)
+            if final.all():
+                break
+        # -> B x target_vocab_size x seq_len.
+        outputs = torch.stack(outputs, dim=2)
+        return outputs
+
+    def greedy_decode_predict_test(
+        self,
+        encoded: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Decodes greedily during prediction and testing.
+
+        These are different because teacher forcing is not supported, but
+        decoding will halt once each sequence in the batch generates END or
+        the maximum target length is reached, whichever comes first.
 
         Args:
             encoded (torch.Tensor).
             mask (torch.Tensor).
 
         Returns:
-            torch.Tensor: logits from the decoder.
+            torch.Tensor: logits of B x target_vocab_size x seq_len.
         """
-        batch_size = mask.size(0)
+        batch_size = encoded.size(0)
         outputs = []
         predictions = [self.start_symbol(batch_size).squeeze(1)]
         final = torch.zeros(batch_size, device=self.device, dtype=bool)
@@ -243,24 +326,10 @@ class TransformerModel(base.BaseModel):
                 torch.stack(predictions, dim=1),
             )
             outputs.append(logits)
-            forcing_tensor = torch.full(
-                (batch_size, 1), self.teacher_forcing, device=self.device
-            )
-            sample = torch.bernoulli(forcing_tensor).bool()
-            if self.teacher_forcing == 1.0:
-                symbol = target[:, _].unsqueeze(1)
-            elif self.teacher_forcing == 0.0:
-                symbol = torch.argmax(logits, dim=1)
-            else:
-                print("Sample:", sample)
-                student_symbol = logits.argmax(dim=2)
-                teacher_symbol = target[:, _].unsqueeze(1)
-                symbol = torch.where(sample, student_symbol, teacher_symbol)
-            predictions.append(symbol)
+            symbol = logits.argmax(dim=2)
             final = torch.logical_or(final, symbol == special.END_IDX)
             if final.all():
                 break
-        # -> B x target_vocab_size x seq_len.
         outputs = torch.stack(outputs, dim=2)
         return outputs
 
@@ -495,7 +564,8 @@ class CausalTransformerModel(base.BaseModel):
         prefix = batch.source.tensor
         if batch.has_features:
             prefix = torch.cat((prefix, batch.features.tensor), dim=1)
-        if (self.training or self.validating) and self.teacher_forcing:
+        raise NotImplementedError
+        if (self.training or self.validating) and self.teacher_forcing == 1:
             symbol = self.start_symbol(batch_size)
             sequence = torch.cat((prefix, symbol, batch.target.tensor), dim=1)
             tensor = data.PaddedTensor.from_tensor(sequence)

@@ -8,7 +8,7 @@ concrete decoder modules.
 import abc
 
 import torch
-from torch import distributions, nn
+from torch import nn
 
 from .. import data, defaults, special
 from . import base, beam_search, embeddings, modules
@@ -209,16 +209,15 @@ class RNNModel(base.BaseModel):
         context = self.decoder.get_context(sequence, encoded)
         if self.beam_width > 1:
             return self.beam_decode(context, mask)
+        elif self.training or self.validating:
+            # This version supports teacher forcing.
+            return self.greedy_decode_train_validate(
+                context,
+                mask,
+                batch.target.tensor if self.teacher_forcing > 0.0 else None,
+            )
         else:
-            if self.training or self.validating:
-                # This version supports teacher forcing.
-                return self.greedy_decode_train_validate(
-                    context,
-                    mask,
-                    batch.target.tensor if self.teacher_forcing != 0 else None,
-                )
-            else:
-                return self.greedy_decode_predict_test(context, mask)
+            return self.greedy_decode_predict_test(context, mask)
 
     @abc.abstractmethod
     def get_decoder(self) -> modules.RNNDecoder: ...
@@ -245,43 +244,38 @@ class RNNModel(base.BaseModel):
                 these are used for teacher forcing.
 
         Returns:
-            torch.Tensor: predictions.
+            torch.Tensor: logits from the decoder.
         """
         batch_size = context.size(0)
         symbol = self.start_symbol(batch_size)
         state = self.decoder.initial_state(batch_size)
-        predictions = []
-        if (
-            self.teacher_forcing == 0.0
-        ):  # fixed the 1.0 scenario by just flipping this if statement
+        outputs = []
+        if self.teacher_forcing == 0.0:
             target_length = self.max_target_length
-            # should I be deciding target length based on student forcing float?
         else:
             target_length = target.size(1)
-
         final = torch.zeros(batch_size, device=self.device, dtype=bool)
         for t in range(target_length):
-            # implenting nikolaj constant at bengio et al token level
             logits, state = self.decode_step(symbol, context, mask, state)
-            predictions.append(logits.squeeze(1))
-            # generates coinflip tensor for student forcing
-            forcing_tensor = torch.full(
-                (batch_size, 1), self.teacher_forcing, device=self.device
-            )
-            sample = torch.bernoulli(forcing_tensor).bool()
+            outputs.append(logits.squeeze(1))
             if self.teacher_forcing == 1.0:
                 symbol = target[:, t].unsqueeze(1)
             elif self.teacher_forcing == 0.0:
                 symbol = logits.argmax(dim=2)
             else:
+                # RNN decoder expects trailing dimension of 1
+                forcing_tensor = torch.full(
+                    (batch_size, 1), self.teacher_forcing, device=self.device
+                )
+                sample = torch.bernoulli(forcing_tensor).bool()
                 student_symbol = logits.argmax(dim=2)
                 teacher_symbol = target[:, t].unsqueeze(1)
                 symbol = torch.where(sample, student_symbol, teacher_symbol)
             final = torch.logical_or(final, symbol == special.END_IDX)
             if final.all():
                 break
-        predictions = torch.stack(predictions, dim=2)
-        return predictions
+        outputs = torch.stack(outputs, dim=2)
+        return outputs
 
     def greedy_decode_predict_test(
         self,
@@ -299,22 +293,22 @@ class RNNModel(base.BaseModel):
             mask (torch.Tensor).
 
         Returns:
-            torch.Tensor: predictions of B x target_vocab_size x seq_len.
+            torch.Tensor: logits of B x target_vocab_size x seq_len.
         """
         batch_size = context.size(0)
         symbol = self.start_symbol(batch_size)
         state = self.decoder.initial_state(batch_size)
-        predictions = []
+        outputs = []
         final = torch.zeros(batch_size, device=self.device, dtype=bool)
         for _ in range(self.max_target_length):
             logits, state = self.decode_step(symbol, context, mask, state)
-            predictions.append(logits.squeeze(1))
+            outputs.append(logits.squeeze(1))
             symbol = logits.argmax(dim=2)
             final = torch.logical_or(final, symbol == special.END_IDX)
             if final.all():
                 break
-        predictions = torch.stack(predictions, dim=2)
-        return predictions
+        outputs = torch.stack(outputs, dim=2)
+        return outputs
 
     def init_embeddings(
         self,
