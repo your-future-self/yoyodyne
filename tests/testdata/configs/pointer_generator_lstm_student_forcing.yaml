@@ -15,4 +15,4 @@ init_args:
     class_path: torch.optim.Adam
     init_args:
       lr: .01
-  teacher_forcing: false
+  teacher_forcing: 0.0

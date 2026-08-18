@@ -14,4 +14,4 @@ init_args:
     class_path: yoyodyne.schedulers.WarmupInverseSquareRoot
     init_args:
       warmup_epochs: 10
-  teacher_forcing: false
+  teacher_forcing: 0.0

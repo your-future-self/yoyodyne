@@ -1,0 +1,133 @@
+_instantiator: lightning.pytorch.cli.instantiate_module
+attention_heads: 4
+compute_accuracy: true
+compute_ser: true
+decoder_dropout: 0.2
+decoder_hidden_size: 256
+decoder_layers: 4
+embedding_size: 64
+index: !!python/object/apply:yoyodyne.data.indexes._reconstruct_index
+- features_vocabulary: null
+  source_vocabulary:
+  - a
+  - b
+  - c
+  - d
+  - e
+  - f
+  - g
+  - h
+  - i
+  - j
+  - k
+  - l
+  - m
+  - n
+  - o
+  - p
+  - r
+  - s
+  - t
+  - u
+  - v
+  - x
+  - y
+  - "\xE1"
+  - "\xE6"
+  - "\xE9"
+  - "\xED"
+  - "\xF0"
+  - "\xF3"
+  - "\xF6"
+  - "\xFA"
+  - "\xFD"
+  - "\xFE"
+  target_vocabulary:
+  - a
+  - "a\u02D0"
+  - c
+  - "c\u02B0"
+  - "c\u02D0"
+  - e
+  - f
+  - "f\u02D0"
+  - h
+  - i
+  - "i\u02D0"
+  - j
+  - k
+  - "k\u02B0"
+  - "k\u02D0"
+  - l
+  - "l\u02D0"
+  - "l\u0325"
+  - m
+  - "m\u02D0"
+  - "m\u0325"
+  - n
+  - "n\u02D0"
+  - "n\u0325"
+  - o
+  - p
+  - "p\u02B0"
+  - "p\u02D0"
+  - r
+  - "r\u02D0"
+  - "r\u0325"
+  - s
+  - "s\u02D0"
+  - t
+  - "t\u02B0"
+  - "t\u02D0"
+  - u
+  - "u\u02D0"
+  - v
+  - x
+  - "x\u02B7"
+  - y
+  - "y\u02D0"
+  - "\xE7"
+  - "\xF0"
+  - "\xF8"
+  - "\u014B"
+  - "\u0153"
+  - "\u0153\u02D0"
+  - "\u0254"
+  - "\u0254\u02D0"
+  - "\u025B"
+  - "\u025B\u02D0"
+  - "\u0263"
+  - "\u026A"
+  - "\u026A\u02D0"
+  - "\u0272"
+  - "\u028F"
+  - "\u028F\u02D0"
+  - "\u03B8"
+  tie_embeddings: true
+label_smoothing: 0.1
+max_features_length: 0
+max_source_length: 32
+max_target_length: 40
+optimizer:
+  class_path: torch.optim.Adam
+  init_args:
+    amsgrad: false
+    betas:
+    - 0.9
+    - 0.999
+    capturable: false
+    decoupled_weight_decay: false
+    differentiable: false
+    eps: 1.0e-08
+    foreach: null
+    fused: null
+    lr: 0.01
+    maximize: false
+    weight_decay: 0.0
+scheduler:
+  class_path: yoyodyne.schedulers.WarmupInverseSquareRoot
+  init_args:
+    warmup_epochs: 10
+target_vocab_size: 78
+teacher_forcing: 0.0
+vocab_size: 78

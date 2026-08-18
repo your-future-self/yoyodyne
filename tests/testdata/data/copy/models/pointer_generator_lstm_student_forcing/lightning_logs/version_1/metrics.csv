@@ -1,0 +1,2 @@
+epoch,step,test_accuracy,test_ser
+0,0,0.75,0.10508474707603455
