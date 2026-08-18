@@ -304,7 +304,7 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                     features_mask=batch.features.mask,
                 )
             elif self.training or self.validating:
-                # raise NotImplementedError
+                raise NotImplementedError
                 # This version supports teacher forcing.
                 return self.greedy_decode_train_validate(
                     batch.source.tensor,
@@ -332,7 +332,6 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
             )
         elif self.training or self.validating:
             # This version supports teacher forcing.
-            # raise NotImplementedError
             return self.greedy_decode_train_validate(
                 batch.source.tensor,
                 source_encoded,
@@ -370,8 +369,8 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                 weights.
             source_encoded (torch.Tensor).
             source_mask (torch.Tensor).
-            features_encoded (torch.Tensor, optional).
-            features_mask (torch.Tensor, optional).
+            features_encoded (torch.Tensor, optional).  NOT IMPLEMENTED
+            features_mask (torch.Tensor, optional).     NOT IMPLEMENTED
             target (torch.Tensor, optional): target symbols; if provided,
                 these are used for teacher forcing.
 
