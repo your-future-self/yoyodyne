@@ -233,7 +233,8 @@ class TransformerModel(base.BaseModel):
     ) -> torch.Tensor:
         """Decodes globally using teacher forcing.
 
-        This is only possible during strict teacher forcing training and validation;
+        This is only possible during strict teacher
+        forcing training and validation;
         Student forcing requires greedy decoding.
 
         Args:

@@ -29,19 +29,17 @@ class RNNModel(base.BaseModel):
 
     Args:
         *args: passed to superclass.
-        teacher_forcing (float, optional): probability of each token being teacher forced
-            forcing be used?
+        teacher_forcing (float, optional):
+        probability of each token being teacher forced
         **kwargs: passed to superclass.
     """
 
-    # teacher_forcing: bool
     teacher_forcing: float
     classifier: nn.Linear
 
     def __init__(
         self,
         *args,
-        # teacher_forcing: bool = defaults.TEACHER_FORCING,
         teacher_forcing: float = defaults.TEACHER_FORCING,
         **kwargs,
     ):
@@ -66,7 +64,8 @@ class RNNModel(base.BaseModel):
                 "source_encoder",
                 # Options that can change between training and prediction.
                 "beam_width",
-                # Allows to change between teacher forcing and student forcing from a checkpoint
+                # Allows to change between teacher forcing
+                # and student forcing from a checkpoint
                 # "teacher_forcing",
             ]
         )

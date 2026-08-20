@@ -233,7 +233,7 @@ class TransducerRNNModel(base.BaseModel):
                 state,
             )
             logits = self.classifier(decoded).squeeze(1)
-            # If given targets, asks expert for optimal actions.
+            # If given targets, asks expert for actions.
             optim_actions = (
                 self._batch_expert_rollout(
                     source_list,

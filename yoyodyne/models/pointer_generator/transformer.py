@@ -384,7 +384,7 @@ class PointerGeneratorTransformerModel(
                     ),
                 )
         else:
-            return self.greedy_decode_predict_test(encoded, mask)
+            return self.greedy_decode_predict_test(source_encoded, source_mask)
 
     def global_decode(
         self,
