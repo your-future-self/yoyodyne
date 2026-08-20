@@ -36,7 +36,9 @@ class TransformerModel(base.BaseModel):
         self,
         *args,
         attention_heads: int = defaults.ATTENTION_HEADS,
-        decoder_positional_encoding: modules.BasePositionalEncoding | None = None,
+        decoder_positional_encoding: (
+            modules.BasePositionalEncoding | None
+        ) = None,
         teacher_forcing: float = defaults.TEACHER_FORCING,
         # teacher_forcing: bool = True,
         **kwargs,
@@ -44,7 +46,8 @@ class TransformerModel(base.BaseModel):
         super().__init__(*args, **kwargs)
         self.attention_heads = attention_heads
         if self.has_features_encoder and (
-            self.source_encoder.output_size != self.features_encoder.output_size
+            self.source_encoder.output_size
+            != self.features_encoder.output_size
         ):
             raise base.ConfigurationError(
                 "Cannot concatenate source encoding "
@@ -53,7 +56,9 @@ class TransformerModel(base.BaseModel):
             )
         self.decoder = self.get_decoder(decoder_positional_encoding)
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(self.embedding_size, self.target_vocab_size)
+        self.classifier = nn.Linear(
+            self.embedding_size, self.target_vocab_size
+        )
         self._log_model()
         self.save_hyperparameters(
             ignore=[
@@ -114,8 +119,8 @@ class TransformerModel(base.BaseModel):
             encoded (torch.Tensor).
             mask (torch.Tensor).
         """
-        sequences, item_indices, index_map = batched_beam.collect_active_sequences(
-            self.device
+        sequences, item_indices, index_map = (
+            batched_beam.collect_active_sequences(self.device)
         )
         if not index_map:
             return
@@ -143,7 +148,9 @@ class TransformerModel(base.BaseModel):
         Returns:
             torch.Tensor: logits.
         """
-        decoded, _ = self.decoder(encoded, mask, predictions, None, self.embeddings)
+        decoded, _ = self.decoder(
+            encoded, mask, predictions, None, self.embeddings
+        )
         return self.classifier(decoded[:, -1, :])
 
     def forward(self, batch: data.Batch) -> torch.Tensor:
@@ -161,7 +168,9 @@ class TransformerModel(base.BaseModel):
             base.ConfigurationError: Features encoder specified but no features
                 column specified.
         """
-        encoded = self.source_encoder(batch.source, self.embeddings, is_source=True)
+        encoded = self.source_encoder(
+            batch.source, self.embeddings, is_source=True
+        )
         mask = batch.source.mask
         if batch.has_features and not self.has_features_encoder:
             raise base.ConfigurationError(
@@ -170,7 +179,8 @@ class TransformerModel(base.BaseModel):
         if self.has_features_encoder:
             if not batch.has_features:
                 raise base.ConfigurationError(
-                    "Features encoder specified but " "no features column specified"
+                    "Features encoder specified but "
+                    "no features column specified"
                 )
             features_encoded = self.features_encoder(
                 batch.features,
@@ -190,7 +200,11 @@ class TransformerModel(base.BaseModel):
                 return self.greedy_decode_train_validate(
                     encoded,
                     mask,
-                    batch.target.tensor if self.teacher_forcing > 0.0 else None,
+                    (
+                        batch.target.tensor
+                        if self.teacher_forcing > 0.0
+                        else None
+                    ),
                 )
         else:
             return self.greedy_decode_predict_test(encoded, mask)
@@ -333,7 +347,9 @@ class TransformerModel(base.BaseModel):
         outputs = torch.stack(outputs, dim=2)
         return outputs
 
-    def init_embeddings(self, num_embeddings: int, embedding_size: int) -> nn.Embedding:
+    def init_embeddings(
+        self, num_embeddings: int, embedding_size: int
+    ) -> nn.Embedding:
         """Initializes the embedding layer.
 
         Args:
@@ -386,7 +402,9 @@ class RotaryTransformerModel(TransformerModel):
             )
         super().__init__(*args, **kwargs)
 
-    def get_decoder(self, positional_encoding=None) -> modules.RotaryTransformerDecoder:
+    def get_decoder(
+        self, positional_encoding=None
+    ) -> modules.RotaryTransformerDecoder:
         return modules.RotaryTransformerDecoder(
             attention_heads=self.attention_heads,
             decoder_input_size=self.source_encoder.output_size,
@@ -462,7 +480,9 @@ class CausalTransformerModel(base.BaseModel):
         self.attention_heads = attention_heads
         self.decoder = self.get_decoder(positional_encoding)
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(self.embedding_size, self.target_vocab_size)
+        self.classifier = nn.Linear(
+            self.embedding_size, self.target_vocab_size
+        )
         self._log_model()
         self.save_hyperparameters(
             ignore=[
@@ -517,8 +537,8 @@ class CausalTransformerModel(base.BaseModel):
             batched_beam (beam_search.BatchedBeam).
             prefix (torch.Tensor).
         """
-        sequences, item_indices, index_map = batched_beam.collect_active_sequences(
-            self.device
+        sequences, item_indices, index_map = (
+            batched_beam.collect_active_sequences(self.device)
         )
         if not index_map:
             return
@@ -629,7 +649,9 @@ class CausalTransformerModel(base.BaseModel):
         outputs = torch.stack(outputs, dim=2)
         return outputs
 
-    def _get_prefix_mask(self, prefix_length: int, target_length: int) -> torch.Tensor:
+    def _get_prefix_mask(
+        self, prefix_length: int, target_length: int
+    ) -> torch.Tensor:
         """Generates the prefix LM attention mask.
 
         Mask shape is L x L where L = prefix_length + target_length.
@@ -660,7 +682,9 @@ class CausalTransformerModel(base.BaseModel):
         )
         return mask
 
-    def init_embeddings(self, num_embeddings: int, embedding_size: int) -> nn.Embedding:
+    def init_embeddings(
+        self, num_embeddings: int, embedding_size: int
+    ) -> nn.Embedding:
         return embeddings.xavier_embedding(num_embeddings, embedding_size)
 
     @property
@@ -692,7 +716,8 @@ class RotaryCausalTransformerModel(CausalTransformerModel):
     def __init__(self, *args, **kwargs):
         if kwargs.get("positional_encoding") is not None:
             raise base.ConfigurationError(
-                f"{self.__class__.__name__} does not accept " "positional_encoding"
+                f"{self.__class__.__name__} does not accept "
+                "positional_encoding"
             )
         super().__init__(*args, **kwargs)
 

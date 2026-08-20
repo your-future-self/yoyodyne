@@ -8,7 +8,9 @@ from .. import base as models_base, beam_search, defaults, embeddings, modules
 from . import base as pointer_generator_base
 
 
-class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorModel):
+class PointerGeneratorTransformerModel(
+    pointer_generator_base.PointerGeneratorModel
+):
     """Pointer-generator model with a transformer backend.
 
     After:
@@ -34,7 +36,9 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
         self,
         *args,
         attention_heads: int = defaults.ATTENTION_HEADS,
-        decoder_positional_encoding: modules.BasePositionalEncoding | None = None,
+        decoder_positional_encoding: (
+            modules.BasePositionalEncoding | None
+        ) = None,
         teacher_forcing: float = defaults.TEACHER_FORCING,
         **kwargs,
     ):
@@ -54,7 +58,9 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
             )
         self.decoder = self.get_decoder(decoder_positional_encoding)
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(self.embedding_size, self.target_vocab_size)
+        self.classifier = nn.Linear(
+            self.embedding_size, self.target_vocab_size
+        )
         self._log_model()
         self.save_hyperparameters(
             ignore=[
@@ -136,8 +142,8 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
             features_encoded (torch.Tensor, optional).
             features_mask (torch.Tensor, optional).
         """
-        sequences, item_indices, index_map = batched_beam.collect_active_sequences(
-            self.device
+        sequences, item_indices, index_map = (
+            batched_beam.collect_active_sequences(self.device)
         )
         if not index_map:
             return
@@ -145,7 +151,9 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
         expanded_source_encoded = source_encoded[item_indices]
         expanded_source_mask = source_mask[item_indices]
         expanded_features_encoded = (
-            features_encoded[item_indices] if features_encoded is not None else None
+            features_encoded[item_indices]
+            if features_encoded is not None
+            else None
         )
         expanded_features_mask = (
             features_mask[item_indices] if features_mask is not None else None
@@ -239,7 +247,9 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
         # representations w.r.t. each decoder step.
         context = torch.bmm(mha_outputs, source_encoded)
         # Probability of generating from output_dist.
-        gen_probs = self.generation_probability(context, decoded, target_embedded)
+        gen_probs = self.generation_probability(
+            context, decoded, target_embedded
+        )
         scaled_pointer_dist = pointer_dist * (1 - gen_probs)
         scaled_output_dist = output_dist * gen_probs
         return torch.log(scaled_output_dist + scaled_pointer_dist)
@@ -260,7 +270,9 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
             positional_encoding=positional_encoding,
         )
 
-    def init_embeddings(self, num_embeddings: int, embedding_size: int) -> nn.Embedding:
+    def init_embeddings(
+        self, num_embeddings: int, embedding_size: int
+    ) -> nn.Embedding:
         """Initializes the embedding layer.
 
         Args:
@@ -297,7 +309,8 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
         if self.has_features_encoder:
             if not batch.has_features:
                 raise models_base.ConfigurationError(
-                    "Features encoder specified but " "no feature column specified"
+                    "Features encoder specified but "
+                    "no feature column specified"
                 )
             features_encoded = self.features_encoder(
                 batch.features,
@@ -364,7 +377,11 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
                 return self.greedy_decode_train_validate(
                     source_encoded,
                     source_mask,
-                    batch.target.tensor if self.teacher_forcing > 0.0 else None,
+                    (
+                        batch.target.tensor
+                        if self.teacher_forcing > 0.0
+                        else None
+                    ),
                 )
         else:
             return self.greedy_decode_predict_test(encoded, mask)
@@ -432,7 +449,9 @@ class PointerGeneratorTransformerModel(pointer_generator_base.PointerGeneratorMo
         outputs = []
         # The predicted symbols at each iteration.
         predictions = [
-            torch.tensor([special.START_IDX], device=self.device).repeat(batch_size)
+            torch.tensor([special.START_IDX], device=self.device).repeat(
+                batch_size
+            )
         ]
         final = torch.zeros(batch_size, device=self.device, dtype=bool)
         for _ in range(self.max_target_length):

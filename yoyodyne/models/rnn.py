@@ -47,10 +47,14 @@ class RNNModel(base.BaseModel):
     ):
         super().__init__(*args, **kwargs)
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(self.decoder_hidden_size, self.target_vocab_size)
+        self.classifier = nn.Linear(
+            self.decoder_hidden_size, self.target_vocab_size
+        )
         self.decoder = self.get_decoder()
         self.teacher_forcing = teacher_forcing
-        self.classifier = nn.Linear(self.decoder_hidden_size, self.target_vocab_size)
+        self.classifier = nn.Linear(
+            self.decoder_hidden_size, self.target_vocab_size
+        )
         self._log_model()
         self.save_hyperparameters(
             ignore=[
@@ -87,7 +91,9 @@ class RNNModel(base.BaseModel):
                 log-likelihoods.
         """
         batch_size = context.size(0)
-        per_item_states = self.decoder.initial_state(batch_size).split(batch_size)
+        per_item_states = self.decoder.initial_state(batch_size).split(
+            batch_size
+        )
         batched_beam = beam_search.BatchedBeam(
             self.beam_width, batch_size, per_item_states
         )
@@ -153,7 +159,9 @@ class RNNModel(base.BaseModel):
             tuple[torch.Tensor, modules.RNNState]: logits and the updated RNN
                 state.
         """
-        decoded, state = self.decoder(symbol, self.embeddings, context, mask, state)
+        decoded, state = self.decoder(
+            symbol, self.embeddings, context, mask, state
+        )
         logits = self.classifier(decoded)
         return logits, state
 
@@ -190,16 +198,22 @@ class RNNModel(base.BaseModel):
         if self.has_features_encoder:
             if not batch.has_features:
                 raise base.ConfigurationError(
-                    "Features encoder specified but " "no feature column specified"
+                    "Features encoder specified but "
+                    "no feature column specified"
                 )
-            if self.source_encoder.output_size != self.features_encoder.output_size:
+            if (
+                self.source_encoder.output_size
+                != self.features_encoder.output_size
+            ):
                 raise base.ConfigurationError(
                     "Cannot concatenate source encoding "
                     f"({self.source_encoder.output_size}) and features "
                     f"encoding ({self.features_encoder.output_size})"
                 )
             sequence = torch.cat((sequence, batch.features.tensor), dim=1)
-            features_encoded = self.features_encoder(batch.features, self.embeddings)
+            features_encoded = self.features_encoder(
+                batch.features, self.embeddings
+            )
             encoded = torch.cat((encoded, features_encoded), dim=1)
             mask = torch.cat((mask, batch.features.mask), dim=1)
         elif batch.has_features:

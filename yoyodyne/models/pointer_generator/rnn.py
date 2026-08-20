@@ -111,7 +111,9 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                     log-likelihoods.
         """
         batch_size = source_mask.size(0)
-        per_item_states = self.decoder.initial_state(batch_size).split(batch_size)
+        per_item_states = self.decoder.initial_state(batch_size).split(
+            batch_size
+        )
         batched_beam = beam_search.BatchedBeam(
             self.beam_width, batch_size, per_item_states
         )
@@ -159,7 +161,9 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
         expanded_source_encoded = source_encoded[item_indices]
         expanded_source_mask = source_mask[item_indices]
         expanded_features_encoded = (
-            features_encoded[item_indices] if features_encoded is not None else None
+            features_encoded[item_indices]
+            if features_encoded is not None
+            else None
         )
         expanded_features_mask = (
             features_mask[item_indices] if features_mask is not None else None
@@ -221,7 +225,9 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                 features_mask,
             )
             context = torch.cat((context, features_context), dim=2)
-        _, state = self.decoder.module(torch.cat((embedded, context), dim=2), state)
+        _, state = self.decoder.module(
+            torch.cat((embedded, context), dim=2), state
+        )
         hidden = state.hidden[-1, :, :].unsqueeze(1)
         output_dist = nn.functional.softmax(
             self.classifier(torch.cat((hidden, context), dim=2)),
@@ -288,7 +294,8 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
         if self.has_features_encoder:
             if not batch.has_features:
                 raise models_base.ConfigurationError(
-                    "Features encoder specified but " "no feature column specified"
+                    "Features encoder specified but "
+                    "no feature column specified"
                 )
             features_encoded = self.features_encoder(
                 batch.features,
@@ -310,7 +317,9 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
                     batch.source.tensor,
                     source_encoded,
                     batch.source.mask,
-                    target=(batch.target.tensor if self.teacher_forcing else None),
+                    target=(
+                        batch.target.tensor if self.teacher_forcing else None
+                    ),
                     features_encoded=features_encoded,
                     features_mask=batch.features.mask,
                 )
@@ -463,7 +472,10 @@ class PointerGeneratorRNNModel(pointer_generator_base.PointerGeneratorModel):
     def decoder_input_size(self) -> int:
         # We concatenate along the encoding dimension.
         if self.has_features_encoder:
-            return self.source_encoder.output_size + self.features_encoder.output_size
+            return (
+                self.source_encoder.output_size
+                + self.features_encoder.output_size
+            )
         else:
             return self.source_encoder.output_size
 
